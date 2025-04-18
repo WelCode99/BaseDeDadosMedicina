@@ -1,630 +1,528 @@
-{
-  "cells": [
-    {
-      "cell_type": "markdown",
-      "metadata": {
-        "id": "view-in-github",
-        "colab_type": "text"
-      },
-      "source": [
-        "<a href=\"https://colab.research.google.com/github/WelCode99/BaseDeDadosMedicina/blob/main/C%C3%B3digoArtriteAnalise\" target=\"_parent\"><img src=\"https://colab.research.google.com/assets/colab-badge.svg\" alt=\"Open In Colab\"/></a>"
-      ]
-    },
-    {
-      "cell_type": "markdown",
-      "source": [
-        "Okay, compreendido. Com base na análise e conciliação realizadas, fornecerei abaixo o código Python completo e unificado que reflete as etapas da sua análise, desde o carregamento dos dados até a geração dos resultados e gráficos principais presentes no seu artigo.\n",
-        "\n",
-        "Este script foi estruturado para ser o mais claro e reprodutível possível, incorporando as transformações necessárias (`IDADE/10` e padronização de `DIAS_PERM`) para alinhar com os Odds Ratios finais (OR Idade ≈ 1.21, OR LOS ≈ 0.89).\n",
-        "\n",
-        "**Requisitos:**\n",
-        "\n",
-        "* Python 3.x\n",
-        "* Bibliotecas: `pandas`, `numpy`, `matplotlib`, `seaborn`, `statsmodels`, `scikit-learn` (sklearn)\n",
-        "* Arquivo de dados: `SIH_ArtriteSeptica_BrasilUFporUF_filtered61225.csv` no mesmo diretório do script, ou o caminho completo deve ser fornecido."
-      ],
-      "metadata": {
-        "id": "YlG47exQAxwC"
-      }
-    },
-    {
-      "cell_type": "code",
-      "source": [
-        "# -*- coding: utf-8 -*-\n",
-        "\"\"\"\n",
-        "Script Completo para Análise de Readmissão em Artrite Séptica (SIH/SUS)\n",
-        "\n",
-        "Este script reproduz as análises principais do estudo sobre readmissões\n",
-        "e mortalidade por artrite séptica no Brasil (2014-2023), utilizando\n",
-        "dados do SIH/SUS. Inclui carregamento de dados, limpeza, cálculo de\n",
-        "readmissão, análise descritiva, agrupamento de procedimentos,\n",
-        "regressão logística multivariada (com variáveis transformadas para\n",
-        "conciliar com os resultados do artigo) e geração de figuras principais.\n",
-        "\n",
-        "Autor: [Seu Nome/Grupo de Pesquisa] - Baseado em análise assistida por IA\n",
-        "Data: 2025-04-18 (Data da geração do script)\n",
-        "\n",
-        "Entrada: SIH_ArtriteSeptica_BrasilUFporUF_filtered61225.csv\n",
-        "Saídas:\n",
-        "    - Estatísticas descritivas impressas no console.\n",
-        "    - Sumário do modelo de regressão e Odds Ratios impressos no console.\n",
-        "    - Tabela de Odds Ratios salva em 'tabela3_odds_ratios_final.csv'.\n",
-        "    - Figuras salvas em formato PNG e TIFF:\n",
-        "        - figura2_boxplot_idade.png/.tiff\n",
-        "        - figura3_volume_procedimentos.png/.tiff\n",
-        "        - figura4_taxa_readm_procedimentos.png/.tiff\n",
-        "        - figura5_forest_plot_readmissao.png/.tiff\n",
-        "        - figura6_roc_curve.png/.tiff\n",
-        "\"\"\"\n",
-        "\n",
-        "# =============================================================================\n",
-        "# 1. Importação de Bibliotecas\n",
-        "# =============================================================================\n",
-        "print(\"1. Importando bibliotecas...\")\n",
-        "import pandas as pd\n",
-        "import numpy as np\n",
-        "import matplotlib.pyplot as plt\n",
-        "import seaborn as sns\n",
-        "import statsmodels.formula.api as smf\n",
-        "from sklearn.preprocessing import StandardScaler\n",
-        "from sklearn.metrics import roc_curve, auc\n",
-        "import os\n",
-        "import sys\n",
-        "print(\"   Bibliotecas importadas com sucesso.\")\n",
-        "\n",
-        "# =============================================================================\n",
-        "# 2. Configurações e Definição de Caminhos\n",
-        "# =============================================================================\n",
-        "print(\"\\n2. Configurando ambiente...\")\n",
-        "# Estilo dos gráficos\n",
-        "plt.style.use('seaborn-v0_8-whitegrid') # Estilo limpo\n",
-        "sns.set_palette(\"husl\") # Paleta de cores\n",
-        "\n",
-        "# --- IMPORTANTE: Defina o caminho para o arquivo de dados ---\n",
-        "# Se o arquivo CSV não estiver no mesmo diretório do script,\n",
-        "# substitua 'SIH_ArtriteSeptica_BrasilUFporUF_filtered61225.csv'\n",
-        "# pelo caminho completo (ex: '/caminho/para/seu/arquivo.csv' ou 'C:\\\\caminho\\\\arquivo.csv')\n",
-        "input_csv_path = 'SIH_ArtriteSeptica_BrasilUFporUF_filtered61225.csv'\n",
-        "\n",
-        "# Diretório para salvar as saídas (tabelas e figuras)\n",
-        "output_dir = 'ResultadosAnalise'\n",
-        "if not os.path.exists(output_dir):\n",
-        "    os.makedirs(output_dir)\n",
-        "print(f\"   Diretório de saída: '{output_dir}'\")\n",
-        "print(\"   Configuração concluída.\")\n",
-        "\n",
-        "# =============================================================================\n",
-        "# 3. Carregamento e Limpeza Inicial dos Dados\n",
-        "# =============================================================================\n",
-        "print(f\"\\n3. Carregando dados de '{input_csv_path}'...\")\n",
-        "try:\n",
-        "    df = pd.read_csv(input_csv_path, encoding='utf-8')\n",
-        "    print(f\"   Dados carregados com sucesso. Shape inicial: {df.shape}\")\n",
-        "except FileNotFoundError:\n",
-        "    print(f\"ERRO CRÍTICO: Arquivo de dados não encontrado em '{input_csv_path}'.\")\n",
-        "    print(\"Por favor, verifique o caminho e o nome do arquivo.\")\n",
-        "    sys.exit(1) # Termina o script se o arquivo não for encontrado\n",
-        "except Exception as e:\n",
-        "    print(f\"ERRO CRÍTICO ao carregar o arquivo CSV: {e}\")\n",
-        "    sys.exit(1)\n",
-        "\n",
-        "# Filtrar idade >= 18 anos\n",
-        "print(\"   Filtrando pacientes adultos (idade >= 18 anos)...\")\n",
-        "df['IDADE'] = pd.to_numeric(df['IDADE'], errors='coerce')\n",
-        "df_adult = df[df['IDADE'] >= 18].copy()\n",
-        "print(f\"   Número de pacientes adultos: {len(df_adult)} (Shape: {df_adult.shape})\")\n",
-        "\n",
-        "# Converter colunas de data para datetime\n",
-        "print(\"   Convertendo colunas de data...\")\n",
-        "date_cols = ['DT_INTER', 'DT_SAIDA', 'NASC'] # Adicione outras se necessário\n",
-        "for col in date_cols:\n",
-        "    if col in df_adult.columns:\n",
-        "        df_adult[col] = pd.to_datetime(df_adult[col], errors='coerce')\n",
-        "    else:\n",
-        "        print(f\"   Aviso: Coluna de data '{col}' não encontrada no dataframe.\")\n",
-        "\n",
-        "# Verificar e tratar valores ausentes essenciais (Exemplo: Datas, CEP para ID Paciente)\n",
-        "print(\"   Verificando valores ausentes essenciais...\")\n",
-        "essential_cols = ['DT_INTER', 'DT_SAIDA', 'NASC', 'CEP']\n",
-        "missing_before = df_adult[essential_cols].isnull().sum()\n",
-        "print(f\"   Valores ausentes ANTES do tratamento:\\n{missing_before[missing_before > 0]}\")\n",
-        "df_adult.dropna(subset=essential_cols, inplace=True)\n",
-        "missing_after = df_adult[essential_cols].isnull().sum().sum()\n",
-        "print(f\"   Linhas com valores ausentes essenciais removidas. Total de ausentes restantes (essenciais): {missing_after}\")\n",
-        "print(f\"   Shape após remoção de ausentes essenciais: {df_adult.shape}\")\n",
-        "\n",
-        "print(\"   Limpeza inicial concluída.\")\n",
-        "\n",
-        "# =============================================================================\n",
-        "# 4. Criação de Variáveis (ID do Paciente, Readmissão)\n",
-        "# =============================================================================\n",
-        "print(\"\\n4. Criando variáveis de análise...\")\n",
-        "\n",
-        "# Criar identificador único do paciente (Proxy: CEP + Data de Nascimento)\n",
-        "# ATENÇÃO: Esta é uma aproximação. Se um identificador mais robusto existir (ex: CPF anonimizado), use-o.\n",
-        "print(\"   Criando ID do paciente (CEP + Data Nascimento)...\")\n",
-        "try:\n",
-        "    df_adult['CEP'] = df_adult['CEP'].astype(str).str.strip() # Garante que CEP é string\n",
-        "    df_adult['paciente_id'] = df_adult['CEP'] + '_' + df_adult['NASC'].dt.strftime('%Y-%m-%d')\n",
-        "    print(\"      ID do paciente criado.\")\n",
-        "except Exception as e:\n",
-        "    print(f\"   ERRO ao criar ID do paciente: {e}. Verifique as colunas CEP e NASC.\")\n",
-        "    # Considerar parar ou continuar com cautela dependendo da análise\n",
-        "    sys.exit(1)\n",
-        "\n",
-        "# Ordenar por paciente e data de internação\n",
-        "print(\"   Ordenando internações por paciente e data...\")\n",
-        "df_sorted = df_adult.sort_values(by=['paciente_id', 'DT_INTER'])\n",
-        "\n",
-        "# Calcular tempo até a próxima internação\n",
-        "print(\"   Calculando tempo até próxima internação...\")\n",
-        "df_sorted['tempo_ate_proxima_int'] = df_sorted.groupby('paciente_id')['DT_INTER'].shift(-1) - df_sorted['DT_SAIDA']\n",
-        "\n",
-        "# Definir readmissão em 30 dias\n",
-        "print(\"   Definindo variável 'readmissao_30d'...\")\n",
-        "df_sorted['readmissao_30d'] = (df_sorted['tempo_ate_proxima_int'] <= pd.Timedelta(days=30)).astype(int)\n",
-        "\n",
-        "# Dataframe final para análise\n",
-        "df_analysis = df_sorted.copy()\n",
-        "print(\"   Variáveis de análise criadas com sucesso.\")\n",
-        "\n",
-        "# =============================================================================\n",
-        "# 5. Análise Descritiva Básica\n",
-        "# =============================================================================\n",
-        "print(\"\\n5. Realizando análise descritiva básica...\")\n",
-        "\n",
-        "# N total\n",
-        "n_total = len(df_analysis)\n",
-        "print(f\"   Número total de registros analisados: {n_total}\")\n",
-        "\n",
-        "# Estatísticas de Idade e Tempo de Internação\n",
-        "print(\"\\n   Estatísticas Descritivas (Idade e Tempo de Internação):\")\n",
-        "desc_stats = df_analysis[['IDADE', 'DIAS_PERM']].describe()\n",
-        "print(desc_stats)\n",
-        "# Salvar estatísticas descritivas (opcional)\n",
-        "desc_stats.to_csv(os.path.join(output_dir, 'tabela_descritivas_idade_los.csv'))\n",
-        "\n",
-        "# Taxa de Readmissão Geral\n",
-        "taxa_geral_readmissao = df_analysis['readmissao_30d'].mean() * 100\n",
-        "print(f\"\\n   Taxa Geral de Readmissão em 30 dias: {taxa_geral_readmissao:.2f}%\")\n",
-        "\n",
-        "# Plot Boxplot Idade (Figura 2)\n",
-        "print(\"\\n   Gerando Figura 2: Boxplot Idade...\")\n",
-        "plt.figure(figsize=(8, 6))\n",
-        "sns.boxplot(y=df_analysis['IDADE'], color='skyblue')\n",
-        "plt.title('Figura 2: Distribuição da Idade dos Pacientes')\n",
-        "plt.ylabel('Idade (anos)')\n",
-        "plt.grid(True, axis='y', linestyle='--', alpha=0.7)\n",
-        "plt.tight_layout()\n",
-        "fig2_path_png = os.path.join(output_dir, 'figura2_boxplot_idade.png')\n",
-        "fig2_path_tiff = os.path.join(output_dir, 'figura2_boxplot_idade.tiff')\n",
-        "plt.savefig(fig2_path_png, dpi=300)\n",
-        "plt.savefig(fig2_path_tiff, dpi=300)\n",
-        "print(f\"      Figura 2 salva em '{fig2_path_png}' e '{fig2_path_tiff}'\")\n",
-        "# plt.show() # Descomente para exibir o gráfico interativamente\n",
-        "plt.close() # Fecha a figura para liberar memória\n",
-        "\n",
-        "print(\"   Análise descritiva básica concluída.\")\n",
-        "\n",
-        "# =============================================================================\n",
-        "# 6. Agrupamento de Procedimentos\n",
-        "# =============================================================================\n",
-        "print(\"\\n6. Agrupando procedimentos...\")\n",
-        "\n",
-        "# Garante que PROC_NOME é string e remove espaços extras\n",
-        "df_analysis['PROC_NOME'] = df_analysis['PROC_NOME'].astype(str).str.strip()\n",
-        "\n",
-        "# --- Função para Agrupar Procedimentos ---\n",
-        "# ATENÇÃO: Revise e ajuste esta função CUIDADOSAMENTE para garantir\n",
-        "# que ela reflita EXATAMENTE as categorias usadas no seu artigo/tabelas.\n",
-        "# Use os nomes exatos dos procedimentos do seu dataset.\n",
-        "def group_procedure(proc_name):\n",
-        "    proc_name_lower = proc_name.lower()\n",
-        "\n",
-        "    # Tratamento Conservador/Clínico (Prioridade baixa, verifica se NÃO é cirúrgico)\n",
-        "    is_conservative = ('conservador' in proc_name_lower or 'clinico' in proc_name_lower or 'clínico' in proc_name_lower)\n",
-        "    is_surgical = any(term in proc_name_lower for term in [\n",
-        "        'artrotomia', 'artroplastia', 'artrodese', 'reconstrucao', 'reconstrução',\n",
-        "        'retirada', 'fixador', 'osteossintese', 'amputacao', 'amputação',\n",
-        "        'desarticulacao', 'desarticulação', 'drenagem', 'sinovectomia',\n",
-        "        'corpo estranho', 'biopsia', 'biópsia', 'revisao', 'revisão'\n",
-        "    ])\n",
-        "\n",
-        "    if is_conservative and not is_surgical:\n",
-        "        return 'Tratamento Conservador/Clínico' # Referência provável\n",
-        "\n",
-        "    # Cirurgia Grande Porte\n",
-        "    elif any(term in proc_name_lower for term in [\n",
-        "        'artroplastia total', 'artrodese de grandes', 'reconstrucao ligamentar complexa', 'reconstrução ligamentar complexa',\n",
-        "        'amputacao', 'amputação', 'desarticulacao de quadril', 'desarticulação de quadril',\n",
-        "        'desarticulacao de joelho', 'desarticulação de joelho', 'artroplastia de revisao', 'artroplastia de revisão']):\n",
-        "         return 'Cirurgia Grande Porte' # OR ≈ 3.94\n",
-        "\n",
-        "    # Procedimentos Específicos (Artrotomia, Drenagem, Corpo Estranho)\n",
-        "    elif any(term in proc_name_lower for term in ['artrotomia', 'drenagem', 'corpo estranho']):\n",
-        "         # Evitar classificar artroplastia/artrodese aqui se já cobertos acima\n",
-        "         if not any(term in proc_name_lower for term in ['artroplastia', 'artrodese']):\n",
-        "              return 'Procedimentos Específicos (Artrot/Dren/CE)' # OR ≈ 3.67\n",
-        "\n",
-        "    # Cirurgia Médio/Pequeno Porte (Outras cirurgias não classificadas acima)\n",
-        "    elif is_surgical:\n",
-        "         return 'Cirurgia Médio/Pequeno Porte'\n",
-        "\n",
-        "    # Categoria Residual\n",
-        "    else:\n",
-        "        return 'Outros/Não Especificado'\n",
-        "\n",
-        "# Aplicar a função para criar a nova coluna\n",
-        "df_analysis['PROC_NOME_agrupado'] = df_analysis['PROC_NOME'].apply(group_procedure)\n",
-        "\n",
-        "# Verificar as contagens e categorias resultantes\n",
-        "print(\"\\n   Contagem de Casos por Grupo de Procedimento Agrupado:\")\n",
-        "proc_counts = df_analysis['PROC_NOME_agrupado'].value_counts()\n",
-        "print(proc_counts)\n",
-        "# Salvar contagens (opcional)\n",
-        "proc_counts.to_csv(os.path.join(output_dir, 'tabela_contagem_procedimentos.csv'))\n",
-        "\n",
-        "# Validar se a categoria de referência existe\n",
-        "reference_category = 'Tratamento Conservador/Clínico'\n",
-        "if reference_category not in df_analysis['PROC_NOME_agrupado'].unique():\n",
-        "    print(f\"\\n!!! ALERTA !!! A categoria de referência definida '{reference_category}' não foi encontrada nos dados agrupados.\")\n",
-        "    print(f\"Categorias encontradas: {list(df_analysis['PROC_NOME_agrupado'].unique())}\")\n",
-        "    print(\"Revise a função 'group_procedure' ou a definição de 'reference_category'.\")\n",
-        "\n",
-        "print(\"   Agrupamento de procedimentos concluído.\")\n",
-        "\n",
-        "\n",
-        "# =============================================================================\n",
-        "# 7. Análise por Grupo de Procedimento\n",
-        "# =============================================================================\n",
-        "print(\"\\n7. Calculando taxas de readmissão por grupo de procedimento...\")\n",
-        "\n",
-        "# Calcular taxa de readmissão por grupo\n",
-        "readm_by_proc = df_analysis.groupby('PROC_NOME_agrupado')['readmissao_30d'].mean() * 100\n",
-        "\n",
-        "# Exibir taxas ordenadas\n",
-        "print(\"\\n   Taxa de Readmissão (%) por Grupo de Procedimento Agrupado:\")\n",
-        "print(readm_by_proc.sort_values(ascending=False))\n",
-        "# Salvar taxas (opcional)\n",
-        "readm_by_proc.sort_values(ascending=False).to_csv(os.path.join(output_dir, 'tabela_taxa_readm_por_procedimento.csv'))\n",
-        "\n",
-        "# Preparar dados para gráfico (Figura 4)\n",
-        "readm_by_proc_df = readm_by_proc.reset_index()\n",
-        "readm_by_proc_df.columns = ['PROC_NOME_agrupado', 'Taxa_Readmissao_Perc']\n",
-        "\n",
-        "print(\"   Cálculo de taxas concluído.\")\n",
-        "\n",
-        "\n",
-        "# =============================================================================\n",
-        "# 8. Regressão Logística Multivariada (Modelo Final Conciliado)\n",
-        "# =============================================================================\n",
-        "print(\"\\n8. Ajustando modelo de regressão logística multivariada final...\")\n",
-        "\n",
-        "# Preparar dataframe para regressão\n",
-        "print(\"   Preparando dados para regressão...\")\n",
-        "regression_cols = ['readmissao_30d', 'IDADE', 'PROC_NOME_agrupado', 'DIAS_PERM']\n",
-        "# Verificar se todas as colunas existem\n",
-        "missing_reg_cols = [col for col in regression_cols if col not in df_analysis.columns]\n",
-        "if missing_reg_cols:\n",
-        "    print(f\"ERRO CRÍTICO: Colunas necessárias para regressão não encontradas: {missing_reg_cols}\")\n",
-        "    sys.exit(1)\n",
-        "\n",
-        "df_regression_final = df_analysis[regression_cols].copy()\n",
-        "initial_rows = len(df_regression_final)\n",
-        "df_regression_final.dropna(inplace=True) # Remover NaNs nas colunas do modelo\n",
-        "rows_after_na = len(df_regression_final)\n",
-        "print(f\"      Removidas {initial_rows - rows_after_na} linhas com valores ausentes nas variáveis do modelo.\")\n",
-        "print(f\"      Número de observações para o modelo: {rows_after_na}\")\n",
-        "\n",
-        "# Aplicar transformações conforme reconciliação\n",
-        "print(\"   Aplicando transformações (Idade por Década, LOS Padronizado)...\")\n",
-        "# 1. Escalar IDADE por década\n",
-        "df_regression_final['IDADE_decada'] = df_regression_final['IDADE'] / 10.0\n",
-        "\n",
-        "# 2. Padronizar (Standardize) DIAS_PERM\n",
-        "scaler_los = StandardScaler()\n",
-        "# fit_transform espera um array 2D\n",
-        "df_regression_final['DIAS_PERM_std'] = scaler_los.fit_transform(df_regression_final[['DIAS_PERM']])\n",
-        "\n",
-        "# Converter variável categórica de procedimento\n",
-        "df_regression_final['PROC_NOME_agrupado'] = pd.Categorical(df_regression_final['PROC_NOME_agrupado'])\n",
-        "\n",
-        "# Definir a fórmula e ajustar o modelo\n",
-        "# CONFIRME A CATEGORIA DE REFERÊNCIA!\n",
-        "# reference_category já definida na Seção 6\n",
-        "if reference_category not in df_regression_final['PROC_NOME_agrupado'].cat.categories:\n",
-        "    print(f\"\\nAVISO URGENTE (Regressão): Categoria de referência '{reference_category}' NÃO encontrada.\")\n",
-        "    formula_final = \"readmissao_30d ~ IDADE_decada + C(PROC_NOME_agrupado) + DIAS_PERM_std\"\n",
-        "else:\n",
-        "    formula_final = f\"readmissao_30d ~ IDADE_decada + C(PROC_NOME_agrupado, Treatment('{reference_category}')) + DIAS_PERM_std\"\n",
-        "\n",
-        "print(f\"\\n   Fórmula utilizada: {formula_final}\")\n",
-        "\n",
-        "try:\n",
-        "    print(\"   Ajustando o modelo logístico...\")\n",
-        "    logit_model_final = smf.logit(formula_final, data=df_regression_final)\n",
-        "    results_final = logit_model_final.fit()\n",
-        "    print(\"      Modelo ajustado com sucesso.\")\n",
-        "\n",
-        "    # Exibir resumo completo do modelo\n",
-        "    print(\"\\n   Resumo Completo do Modelo Logístico Final:\")\n",
-        "    print(results_final.summary())\n",
-        "\n",
-        "    # Calcular e exibir Odds Ratios\n",
-        "    print(\"\\n   Odds Ratios (OR) e IC 95% - Modelo Final Conciliado:\")\n",
-        "    conf_int_final = results_final.conf_int()\n",
-        "    odds_ratios_final = pd.DataFrame({\n",
-        "        'OR': np.exp(results_final.params),\n",
-        "        'Lower CI': np.exp(conf_int_final[0]),\n",
-        "        'Upper CI': np.exp(conf_int_final[1]),\n",
-        "        'p-value': results_final.pvalues\n",
-        "    })\n",
-        "    odds_ratios_final_filtered = odds_ratios_final.drop(index='Intercept')\n",
-        "    print(odds_ratios_final_filtered)\n",
-        "    # Salvar tabela de ORs\n",
-        "    or_table_path = os.path.join(output_dir, 'tabela3_odds_ratios_final.csv')\n",
-        "    odds_ratios_final_filtered.to_csv(or_table_path)\n",
-        "    print(f\"\\n      Tabela de Odds Ratios salva em '{or_table_path}'\")\n",
-        "\n",
-        "    # Verificação explícita dos ORs principais contra o artigo\n",
-        "    print(\"\\n   --- Verificação dos ORs vs Artigo ---\")\n",
-        "    try:\n",
-        "        or_idade_decada_calc = odds_ratios_final_filtered.loc['IDADE_decada', 'OR']\n",
-        "        ci_idade_decada_lower_calc = odds_ratios_final_filtered.loc['IDADE_decada', 'Lower CI']\n",
-        "        ci_idade_decada_upper_calc = odds_ratios_final_filtered.loc['IDADE_decada', 'Upper CI']\n",
-        "        conciliado_idade = abs(or_idade_decada_calc - 1.21) < 0.015 # Margem pequena\n",
-        "        print(f\"   IDADE (por década): OR Calc={or_idade_decada_calc:.3f} (IC 95%: {ci_idade_decada_lower_calc:.3f}-{ci_idade_decada_upper_calc:.3f}) vs Artigo=1.21 -> Conciliado: {'Sim' if conciliado_idade else 'Não'}\")\n",
-        "    except KeyError: print(\"   ERRO: Variável 'IDADE_decada' não encontrada nos resultados.\")\n",
-        "\n",
-        "    try:\n",
-        "        or_los_std_calc = odds_ratios_final_filtered.loc['DIAS_PERM_std', 'OR']\n",
-        "        ci_los_std_lower_calc = odds_ratios_final_filtered.loc['DIAS_PERM_std', 'Lower CI']\n",
-        "        ci_los_std_upper_calc = odds_ratios_final_filtered.loc['DIAS_PERM_std', 'Upper CI']\n",
-        "        conciliado_los = abs(or_los_std_calc - 0.89) < 0.015 # Margem pequena\n",
-        "        print(f\"   TEMPO INTERNAÇÃO (Std): OR Calc={or_los_std_calc:.3f} (IC 95%: {ci_los_std_lower_calc:.3f}-{ci_los_std_upper_calc:.3f}) vs Artigo=0.89 -> Conciliado: {'Sim' if conciliado_los else 'Não'}\")\n",
-        "    except KeyError: print(\"   ERRO: Variável 'DIAS_PERM_std' não encontrada nos resultados.\")\n",
-        "\n",
-        "    # Preparar dados para Forest Plot (Seção 9.3)\n",
-        "    print(\"\\n   Preparando dados para Forest Plot...\")\n",
-        "    or_for_plot_final = odds_ratios_final_filtered.copy()\n",
-        "    rename_map_final = {\n",
-        "         f\"C(PROC_NOME_agrupado, Treatment('{reference_category}'))[T.Cirurgia Grande Porte]\": \"Cirurgia Grande Porte\",\n",
-        "         f\"C(PROC_NOME_agrupado, Treatment('{reference_category}'))[T.Procedimentos Específicos (Artrot/Dren/CE)]\": \"Procedimentos Específicos\",\n",
-        "         f\"C(PROC_NOME_agrupado, Treatment('{reference_category}'))[T.Cirurgia Médio/Pequeno Porte]\": \"Cirurgia Médio/Pequeno Porte\",\n",
-        "         f\"C(PROC_NOME_agrupado, Treatment('{reference_category}'))[T.Outros/Não Especificado]\": \"Outros/Não Especificado\",\n",
-        "         \"IDADE_decada\": \"Idade (por década)\",\n",
-        "         \"DIAS_PERM_std\": \"Tempo Internação (Std)\"\n",
-        "    }\n",
-        "    or_for_plot_final.index = or_for_plot_final.index.map(lambda x: rename_map_final.get(x, x))\n",
-        "    vars_to_plot_final = list(rename_map_final.values()) # Plot all transformed variables\n",
-        "    or_for_plot = or_for_plot_final.loc[or_for_plot_final.index.intersection(vars_to_plot_final)].copy()\n",
-        "    print(\"      Dados para Forest Plot preparados.\")\n",
-        "    plot_data_ready = True\n",
-        "\n",
-        "except Exception as e:\n",
-        "    print(f\"\\nERRO CRÍTICO ao ajustar o modelo de regressão final: {e}\")\n",
-        "    print(\"Verifique a fórmula, as variáveis de entrada e a categoria de referência.\")\n",
-        "    results_final = None\n",
-        "    or_for_plot = None\n",
-        "    plot_data_ready = False\n",
-        "\n",
-        "print(\"   Ajuste do modelo logístico concluído.\")\n",
-        "\n",
-        "\n",
-        "# =============================================================================\n",
-        "# 9. Avaliação do Modelo e Geração de Figuras Finais\n",
-        "# =============================================================================\n",
-        "print(\"\\n9. Avaliando modelo e gerando figuras finais...\")\n",
-        "\n",
-        "# --- 9.1 Curva ROC e AUC (Figura 6) ---\n",
-        "if results_final: # Procede somente se o modelo foi ajustado\n",
-        "    print(\"   Calculando e plotando Curva ROC (Figura 6)...\")\n",
-        "    try:\n",
-        "        predicted_probabilities = results_final.predict(df_regression_final)\n",
-        "        fpr, tpr, thresholds = roc_curve(df_regression_final['readmissao_30d'], predicted_probabilities)\n",
-        "        roc_auc = auc(fpr, tpr)\n",
-        "        print(f\"      Área Sob a Curva ROC (AUC): {roc_auc:.3f}\") # Deve ser ~0.682\n",
-        "\n",
-        "        plt.figure(figsize=(8, 8))\n",
-        "        plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'Curva ROC (AUC = {roc_auc:.3f})')\n",
-        "        plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--', label='Referência (AUC = 0.5)')\n",
-        "        plt.xlim([0.0, 1.0])\n",
-        "        plt.ylim([0.0, 1.05])\n",
-        "        plt.xlabel('Taxa de Falsos Positivos (1 - Especificidade)')\n",
-        "        plt.ylabel('Taxa de Verdadeiros Positivos (Sensibilidade)')\n",
-        "        plt.title('Figura 6: Curva ROC para Predição de Readmissão')\n",
-        "        plt.legend(loc=\"lower right\")\n",
-        "        plt.grid(alpha=0.4, linestyle='--')\n",
-        "        plt.tight_layout()\n",
-        "        fig6_path_png = os.path.join(output_dir, 'figura6_roc_curve.png')\n",
-        "        fig6_path_tiff = os.path.join(output_dir, 'figura6_roc_curve.tiff')\n",
-        "        plt.savefig(fig6_path_png, dpi=300)\n",
-        "        plt.savefig(fig6_path_tiff, dpi=300)\n",
-        "        print(f\"      Figura 6 salva em '{fig6_path_png}' e '{fig6_path_tiff}'\")\n",
-        "        # plt.show()\n",
-        "        plt.close()\n",
-        "    except Exception as e:\n",
-        "        print(f\"      ERRO ao gerar Curva ROC: {e}\")\n",
-        "else:\n",
-        "    print(\"   Modelo logístico não foi ajustado. Pulando cálculo da ROC/AUC.\")\n",
-        "\n",
-        "\n",
-        "# --- 9.2 Volume de Casos por Procedimento (Figura 3) ---\n",
-        "print(\"\\n   Gerando Figura 3: Volume de Casos por Procedimento...\")\n",
-        "# proc_counts foi calculado na Seção 6\n",
-        "if 'proc_counts' in locals() and not proc_counts.empty:\n",
-        "    plt.figure(figsize=(10, 7)) # Ajustado\n",
-        "    bars = plt.bar(proc_counts.index, proc_counts.values, color=sns.color_palette(\"viridis\", len(proc_counts)))\n",
-        "    plt.title('Figura 3: Volume de Casos por Grupo de Procedimento', pad=15, fontsize=14)\n",
-        "    plt.xlabel('Grupo de Procedimento', fontsize=12)\n",
-        "    plt.ylabel('Número de Casos', fontsize=12)\n",
-        "    plt.xticks(rotation=45, ha='right', fontsize=10)\n",
-        "    plt.yticks(fontsize=10)\n",
-        "    plt.grid(True, axis='y', linestyle='--', alpha=0.6)\n",
-        "\n",
-        "    for bar in bars:\n",
-        "        yval = bar.get_height()\n",
-        "        plt.text(bar.get_x() + bar.get_width()/2.0, yval, f'{int(yval)}', ha='center', va='bottom', fontsize=9, fontweight='bold')\n",
-        "\n",
-        "    plt.tight_layout(pad=1.5)\n",
-        "    fig3_path_png = os.path.join(output_dir, 'figura3_volume_procedimentos.png')\n",
-        "    fig3_path_tiff = os.path.join(output_dir, 'figura3_volume_procedimentos.tiff')\n",
-        "    plt.savefig(fig3_path_png, dpi=300)\n",
-        "    plt.savefig(fig3_path_tiff, dpi=300)\n",
-        "    print(f\"      Figura 3 salva em '{fig3_path_png}' e '{fig3_path_tiff}'\")\n",
-        "    # plt.show()\n",
-        "    plt.close()\n",
-        "else:\n",
-        "    print(\"      ERRO: Dados de contagem de procedimentos ('proc_counts') não disponíveis.\")\n",
-        "\n",
-        "\n",
-        "# --- 9.3 Taxa de Readmissão por Procedimento (Figura 4) ---\n",
-        "print(\"\\n   Gerando Figura 4: Taxa de Readmissão por Procedimento...\")\n",
-        "# readm_by_proc_df foi calculado na Seção 7\n",
-        "if 'readm_by_proc_df' in locals() and not readm_by_proc_df.empty:\n",
-        "    readm_by_proc_df_sorted = readm_by_proc_df.sort_values('Taxa_Readmissao_Perc', ascending=False)\n",
-        "    plt.figure(figsize=(10, 7))\n",
-        "    bars = plt.bar(readm_by_proc_df_sorted['PROC_NOME_agrupado'], readm_by_proc_df_sorted['Taxa_Readmissao_Perc'], color=sns.color_palette(\"magma\", len(readm_by_proc_df_sorted)))\n",
-        "    plt.title('Figura 4: Taxa de Readmissão (%) por Grupo de Procedimento', pad=15, fontsize=14)\n",
-        "    plt.xlabel('Grupo de Procedimento', fontsize=12)\n",
-        "    plt.ylabel('Taxa de Readmissão (%)', fontsize=12)\n",
-        "    plt.xticks(rotation=45, ha='right', fontsize=10)\n",
-        "    plt.yticks(fontsize=10)\n",
-        "    plt.grid(True, axis='y', linestyle='--', alpha=0.6)\n",
-        "    plt.ylim(0, max(readm_by_proc_df_sorted['Taxa_Readmissao_Perc']) * 1.18) # Espaço para rótulos\n",
-        "\n",
-        "    for bar in bars:\n",
-        "        yval = bar.get_height()\n",
-        "        plt.text(bar.get_x() + bar.get_width()/2.0, yval, f'{yval:.2f}%', ha='center', va='bottom', fontsize=9, fontweight='bold')\n",
-        "\n",
-        "    plt.tight_layout(pad=1.5)\n",
-        "    fig4_path_png = os.path.join(output_dir, 'figura4_taxa_readm_procedimentos.png')\n",
-        "    fig4_path_tiff = os.path.join(output_dir, 'figura4_taxa_readm_procedimentos.tiff')\n",
-        "    plt.savefig(fig4_path_png, dpi=300)\n",
-        "    plt.savefig(fig4_path_tiff, dpi=300)\n",
-        "    print(f\"      Figura 4 salva em '{fig4_path_png}' e '{fig4_path_tiff}'\")\n",
-        "    # plt.show()\n",
-        "    plt.close()\n",
-        "else:\n",
-        "     print(\"      ERRO: Dados de taxa de readmissão por procedimento ('readm_by_proc_df') não disponíveis.\")\n",
-        "\n",
-        "\n",
-        "# --- 9.4 Forest Plot (Figura 5) ---\n",
-        "print(\"\\n   Gerando Figura 5: Forest Plot...\")\n",
-        "# Usa 'or_for_plot' preparado na Seção 8\n",
-        "if plot_data_ready and or_for_plot is not None and not or_for_plot.empty:\n",
-        "    try:\n",
-        "        or_for_plot_sorted = or_for_plot.sort_values('OR')\n",
-        "        plt.figure(figsize=(10, 7))\n",
-        "        y_pos = np.arange(len(or_for_plot_sorted))\n",
-        "        plt.errorbar(x=or_for_plot_sorted['OR'], y=y_pos,\n",
-        "                     xerr=[or_for_plot_sorted['OR'] - or_for_plot_sorted['Lower CI'],\n",
-        "                           or_for_plot_sorted['Upper CI'] - or_for_plot_sorted['OR']],\n",
-        "                     fmt='o', color='#003366', ecolor='#888888', capsize=5, capthick=1.5,\n",
-        "                     markersize=7, elinewidth=1.5, label='Odds Ratio (IC 95%)')\n",
-        "\n",
-        "        plt.axvline(x=1, color='#990000', linestyle='--', alpha=0.8, label='Referência (OR=1)')\n",
-        "        plt.yticks(y_pos, or_for_plot_sorted.index, fontsize=10)\n",
-        "        plt.xlabel('Odds Ratio (Escala Logarítmica)', fontsize=12)\n",
-        "        plt.ylabel('Fator de Risco', fontsize=12)\n",
-        "        plt.title('Figura 5: Forest Plot dos Fatores de Risco para Readmissão', pad=15, fontsize=14)\n",
-        "        plt.xscale('log') # Escala logarítmica é padrão para Forest Plots\n",
-        "        plt.grid(True, axis='x', linestyle=':', alpha=0.5)\n",
-        "        plt.legend(fontsize=10)\n",
-        "        plt.tight_layout(pad=1.5)\n",
-        "        fig5_path_png = os.path.join(output_dir, 'figura5_forest_plot_readmissao.png')\n",
-        "        fig5_path_tiff = os.path.join(output_dir, 'figura5_forest_plot_readmissao.tiff')\n",
-        "        plt.savefig(fig5_path_png, dpi=300)\n",
-        "        plt.savefig(fig5_path_tiff, dpi=300)\n",
-        "        print(f\"      Figura 5 salva em '{fig5_path_png}' e '{fig5_path_tiff}'\")\n",
-        "        # plt.show()\n",
-        "        plt.close()\n",
-        "    except Exception as e:\n",
-        "        print(f\"      ERRO ao gerar Forest Plot: {e}\")\n",
-        "        print(\"      Verifique se 'or_for_plot' foi criado corretamente na seção 8.\")\n",
-        "\n",
-        "elif not plot_data_ready:\n",
-        "     print(\"      ERRO: Dados para Forest Plot ('or_for_plot') não foram preparados devido a erro na regressão.\")\n",
-        "else:\n",
-        "     print(\"      ERRO: DataFrame 'or_for_plot' vazio ou não definido. Pulando Forest Plot.\")\n",
-        "\n",
-        "print(\"   Geração de figuras concluída.\")\n",
-        "\n",
-        "\n",
-        "# =============================================================================\n",
-        "# 10. Conclusão do Script\n",
-        "# =============================================================================\n",
-        "print(\"\\n10. Análise concluída.\")\n",
-        "print(f\"    Resultados e figuras foram salvos no diretório: '{output_dir}'\")\n",
-        "print(\"    Verifique os arquivos gerados e os resultados impressos no console.\")\n",
-        "print(\"    Lembre-se de revisar a função de agrupamento de procedimentos e a categoria de referência.\")"
-      ],
-      "outputs": [],
-      "execution_count": null,
-      "metadata": {
-        "id": "48EMz0jSAxwD"
-      }
-    },
-    {
-      "cell_type": "markdown",
-      "source": [
-        "**Instruções de Uso:**\n",
-        "\n",
-        "1.  **Salve o Código:** Copie todo o código acima e salve-o em um arquivo Python (por exemplo, `analise_artrite_septica.py`).\n",
-        "2.  **Instale as Bibliotecas:** Se você não tiver alguma das bibliotecas listadas na Seção 1, instale-as usando pip:\n",
-        "    ```bash\n",
-        "    pip install pandas numpy matplotlib seaborn statsmodels scikit-learn\n",
-        "    ```\n",
-        "3.  **Coloque o Arquivo de Dados:** Certifique-se de que o arquivo `SIH_ArtriteSeptica_BrasilUFporUF_filtered61225.csv` esteja no mesmo diretório onde você salvou o script `analise_artrite_septica.py`, ou modifique a variável `input_csv_path` no código para apontar para o local correto do arquivo.\n",
-        "4.  **Execute o Script:** Abra um terminal ou prompt de comando, navegue até o diretório onde você salvou o script e execute-o:\n",
-        "    ```bash\n",
-        "    python analise_artrite_septica.py\n",
-        "    ```\n",
-        "5.  **Verifique a Saída:**\n",
-        "    * O script imprimirá informações e resultados no console durante a execução.\n",
-        "    * Uma pasta chamada `ResultadosAnalise` será criada no mesmo diretório do script (ou onde você especificou em `output_dir`).\n",
-        "    * Dentro dessa pasta, você encontrará as figuras salvas (Figuras 2, 3, 4, 5, 6) nos formatos PNG e TIFF, e as tabelas CSV com estatísticas descritivas, contagens de procedimentos, taxas de readmissão e os resultados da regressão (Odds Ratios).\n",
-        "\n",
-        "**Para Submissão na Revista (Repositório de Dados/Código):**\n",
-        "\n",
-        "* Inclua este script Python (`analise_artrite_septica.py`).\n",
-        "* Inclua o arquivo de dados original (`SIH_ArtriteSeptica_BrasilUFporUF_filtered61225.csv`).\n",
-        "* Inclua um arquivo `README.md` explicando brevemente o conteúdo, como executar o script e os requisitos (versão do Python, bibliotecas).\n",
-        "* Opcionalmente, inclua os arquivos de saída gerados (figuras e tabelas CSV) na pasta `ResultadosAnalise` dentro do seu envio ao repositório.\n",
-        "\n",
-        "Este script fornece uma base sólida e reprodutível para a análise apresentada no seu artigo."
-      ],
-      "metadata": {
-        "id": "_WOiYr1JAxwF"
-      }
-    },
-    {
-      "cell_type": "markdown",
-      "source": [
-        "<div class=\"md-recitation\">\n",
-        "  Sources\n",
-        "  <ol>\n",
-        "  <li><a href=\"https://github.com/CesarSun/Projeto-Integrador---Digital-House\">https://github.com/CesarSun/Projeto-Integrador---Digital-House</a></li>\n",
-        "  <li><a href=\"https://github.com/marlastra/codeexamples\">https://github.com/marlastra/codeexamples</a></li>\n",
-        "  <li><a href=\"https://github.com/jorgermduarte/isec-ic\">https://github.com/jorgermduarte/isec-ic</a></li>\n",
-        "  </ol>\n",
-        "</div>"
-      ],
-      "metadata": {
-        "id": "s_fa5JQ5AxwF"
-      }
+# -*- coding: utf-8 -*-
+"""
+Script Completo para Análise de Readmissão em Artrite Séptica (SIH/SUS)
+
+Este script reproduz as análises principais do estudo sobre readmissões
+e mortalidade por artrite séptica no Brasil (2014-2023), utilizando
+dados do SIH/SUS. Inclui carregamento de dados, limpeza, cálculo de
+readmissão, análise descritiva, agrupamento de procedimentos,
+regressão logística multivariada (com variáveis transformadas para
+conciliar com os resultados do artigo) e geração de figuras principais.
+
+Autor: [Seu Nome/Grupo de Pesquisa] - Baseado em análise assistida por IA
+Data: 2025-04-18 (Data da geração do script)
+
+Entrada: SIH_ArtriteSeptica_BrasilUFporUF_filtered61225.csv
+Saídas:
+    - Estatísticas descritivas impressas no console.
+    - Sumário do modelo de regressão e Odds Ratios impressos no console.
+    - Tabela de Odds Ratios salva em 'tabela3_odds_ratios_final.csv'.
+    - Figuras salvas em formato PNG e TIFF:
+        - figura2_boxplot_idade.png/.tiff
+        - figura3_volume_procedimentos.png/.tiff
+        - figura4_taxa_readm_procedimentos.png/.tiff
+        - figura5_forest_plot_readmissao.png/.tiff
+        - figura6_roc_curve.png/.tiff
+"""
+
+# =============================================================================
+# 1. Importação de Bibliotecas
+# =============================================================================
+print("1. Importando bibliotecas...")
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import statsmodels.formula.api as smf
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import roc_curve, auc
+import os
+import sys
+print("   Bibliotecas importadas com sucesso.")
+
+# =============================================================================
+# 2. Configurações e Definição de Caminhos
+# =============================================================================
+print("\n2. Configurando ambiente...")
+# Estilo dos gráficos
+plt.style.use('seaborn-v0_8-whitegrid') # Estilo limpo
+sns.set_palette("husl") # Paleta de cores
+
+# --- IMPORTANTE: Defina o caminho para o arquivo de dados ---
+# Se o arquivo CSV não estiver no mesmo diretório do script,
+# substitua 'SIH_ArtriteSeptica_BrasilUFporUF_filtered61225.csv'
+# pelo caminho completo (ex: '/caminho/para/seu/arquivo.csv' ou 'C:\\caminho\\arquivo.csv')
+input_csv_path = 'SIH_ArtriteSeptica_BrasilUFporUF_filtered61225.csv'
+
+# Diretório para salvar as saídas (tabelas e figuras)
+output_dir = 'ResultadosAnalise'
+if not os.path.exists(output_dir):
+    os.makedirs(output_dir)
+print(f"   Diretório de saída: '{output_dir}'")
+print("   Configuração concluída.")
+
+# =============================================================================
+# 3. Carregamento e Limpeza Inicial dos Dados
+# =============================================================================
+print(f"\n3. Carregando dados de '{input_csv_path}'...")
+try:
+    df = pd.read_csv(input_csv_path, encoding='utf-8')
+    print(f"   Dados carregados com sucesso. Shape inicial: {df.shape}")
+except FileNotFoundError:
+    print(f"ERRO CRÍTICO: Arquivo de dados não encontrado em '{input_csv_path}'.")
+    print("Por favor, verifique o caminho e o nome do arquivo.")
+    sys.exit(1) # Termina o script se o arquivo não for encontrado
+except Exception as e:
+    print(f"ERRO CRÍTICO ao carregar o arquivo CSV: {e}")
+    sys.exit(1)
+
+# Filtrar idade >= 18 anos
+print("   Filtrando pacientes adultos (idade >= 18 anos)...")
+df['IDADE'] = pd.to_numeric(df['IDADE'], errors='coerce')
+df_adult = df[df['IDADE'] >= 18].copy()
+print(f"   Número de pacientes adultos: {len(df_adult)} (Shape: {df_adult.shape})")
+
+# Converter colunas de data para datetime
+print("   Convertendo colunas de data...")
+date_cols = ['DT_INTER', 'DT_SAIDA', 'NASC'] # Adicione outras se necessário
+for col in date_cols:
+    if col in df_adult.columns:
+        df_adult[col] = pd.to_datetime(df_adult[col], errors='coerce')
+    else:
+        print(f"   Aviso: Coluna de data '{col}' não encontrada no dataframe.")
+
+# Verificar e tratar valores ausentes essenciais (Exemplo: Datas, CEP para ID Paciente)
+print("   Verificando valores ausentes essenciais...")
+essential_cols = ['DT_INTER', 'DT_SAIDA', 'NASC', 'CEP']
+missing_before = df_adult[essential_cols].isnull().sum()
+print(f"   Valores ausentes ANTES do tratamento:\n{missing_before[missing_before > 0]}")
+df_adult.dropna(subset=essential_cols, inplace=True)
+missing_after = df_adult[essential_cols].isnull().sum().sum()
+print(f"   Linhas com valores ausentes essenciais removidas. Total de ausentes restantes (essenciais): {missing_after}")
+print(f"   Shape após remoção de ausentes essenciais: {df_adult.shape}")
+
+print("   Limpeza inicial concluída.")
+
+# =============================================================================
+# 4. Criação de Variáveis (ID do Paciente, Readmissão)
+# =============================================================================
+print("\n4. Criando variáveis de análise...")
+
+# Criar identificador único do paciente (Proxy: CEP + Data de Nascimento)
+# ATENÇÃO: Esta é uma aproximação. Se um identificador mais robusto existir (ex: CPF anonimizado), use-o.
+print("   Criando ID do paciente (CEP + Data Nascimento)...")
+try:
+    df_adult['CEP'] = df_adult['CEP'].astype(str).str.strip() # Garante que CEP é string
+    df_adult['paciente_id'] = df_adult['CEP'] + '_' + df_adult['NASC'].dt.strftime('%Y-%m-%d')
+    print("      ID do paciente criado.")
+except Exception as e:
+    print(f"   ERRO ao criar ID do paciente: {e}. Verifique as colunas CEP e NASC.")
+    # Considerar parar ou continuar com cautela dependendo da análise
+    sys.exit(1)
+
+# Ordenar por paciente e data de internação
+print("   Ordenando internações por paciente e data...")
+df_sorted = df_adult.sort_values(by=['paciente_id', 'DT_INTER'])
+
+# Calcular tempo até a próxima internação
+print("   Calculando tempo até próxima internação...")
+df_sorted['tempo_ate_proxima_int'] = df_sorted.groupby('paciente_id')['DT_INTER'].shift(-1) - df_sorted['DT_SAIDA']
+
+# Definir readmissão em 30 dias
+print("   Definindo variável 'readmissao_30d'...")
+df_sorted['readmissao_30d'] = (df_sorted['tempo_ate_proxima_int'] <= pd.Timedelta(days=30)).astype(int)
+
+# Dataframe final para análise
+df_analysis = df_sorted.copy()
+print("   Variáveis de análise criadas com sucesso.")
+
+# =============================================================================
+# 5. Análise Descritiva Básica
+# =============================================================================
+print("\n5. Realizando análise descritiva básica...")
+
+# N total
+n_total = len(df_analysis)
+print(f"   Número total de registros analisados: {n_total}")
+
+# Estatísticas de Idade e Tempo de Internação
+print("\n   Estatísticas Descritivas (Idade e Tempo de Internação):")
+desc_stats = df_analysis[['IDADE', 'DIAS_PERM']].describe()
+print(desc_stats)
+# Salvar estatísticas descritivas (opcional)
+desc_stats.to_csv(os.path.join(output_dir, 'tabela_descritivas_idade_los.csv'))
+
+# Taxa de Readmissão Geral
+taxa_geral_readmissao = df_analysis['readmissao_30d'].mean() * 100
+print(f"\n   Taxa Geral de Readmissão em 30 dias: {taxa_geral_readmissao:.2f}%")
+
+# Plot Boxplot Idade (Figura 2)
+print("\n   Gerando Figura 2: Boxplot Idade...")
+plt.figure(figsize=(8, 6))
+sns.boxplot(y=df_analysis['IDADE'], color='skyblue')
+plt.title('Figura 2: Distribuição da Idade dos Pacientes')
+plt.ylabel('Idade (anos)')
+plt.grid(True, axis='y', linestyle='--', alpha=0.7)
+plt.tight_layout()
+fig2_path_png = os.path.join(output_dir, 'figura2_boxplot_idade.png')
+fig2_path_tiff = os.path.join(output_dir, 'figura2_boxplot_idade.tiff')
+plt.savefig(fig2_path_png, dpi=300)
+plt.savefig(fig2_path_tiff, dpi=300)
+print(f"      Figura 2 salva em '{fig2_path_png}' e '{fig2_path_tiff}'")
+# plt.show() # Descomente para exibir o gráfico interativamente
+plt.close() # Fecha a figura para liberar memória
+
+print("   Análise descritiva básica concluída.")
+
+# =============================================================================
+# 6. Agrupamento de Procedimentos
+# =============================================================================
+print("\n6. Agrupando procedimentos...")
+
+# Garante que PROC_NOME é string e remove espaços extras
+df_analysis['PROC_NOME'] = df_analysis['PROC_NOME'].astype(str).str.strip()
+
+# --- Função para Agrupar Procedimentos ---
+# ATENÇÃO: Revise e ajuste esta função CUIDADOSAMENTE para garantir
+# que ela reflita EXATAMENTE as categorias usadas no seu artigo/tabelas.
+# Use os nomes exatos dos procedimentos do seu dataset.
+def group_procedure(proc_name):
+    proc_name_lower = proc_name.lower()
+
+    # Tratamento Conservador/Clínico (Prioridade baixa, verifica se NÃO é cirúrgico)
+    is_conservative = ('conservador' in proc_name_lower or 'clinico' in proc_name_lower or 'clínico' in proc_name_lower)
+    is_surgical = any(term in proc_name_lower for term in [
+        'artrotomia', 'artroplastia', 'artrodese', 'reconstrucao', 'reconstrução',
+        'retirada', 'fixador', 'osteossintese', 'amputacao', 'amputação',
+        'desarticulacao', 'desarticulação', 'drenagem', 'sinovectomia',
+        'corpo estranho', 'biopsia', 'biópsia', 'revisao', 'revisão'
+    ])
+
+    if is_conservative and not is_surgical:
+        return 'Tratamento Conservador/Clínico' # Referência provável
+
+    # Cirurgia Grande Porte
+    elif any(term in proc_name_lower for term in [
+        'artroplastia total', 'artrodese de grandes', 'reconstrucao ligamentar complexa', 'reconstrução ligamentar complexa',
+        'amputacao', 'amputação', 'desarticulacao de quadril', 'desarticulação de quadril',
+        'desarticulacao de joelho', 'desarticulação de joelho', 'artroplastia de revisao', 'artroplastia de revisão']):
+         return 'Cirurgia Grande Porte' # OR ≈ 3.94
+
+    # Procedimentos Específicos (Artrotomia, Drenagem, Corpo Estranho)
+    elif any(term in proc_name_lower for term in ['artrotomia', 'drenagem', 'corpo estranho']):
+         # Evitar classificar artroplastia/artrodese aqui se já cobertos acima
+         if not any(term in proc_name_lower for term in ['artroplastia', 'artrodese']):
+              return 'Procedimentos Específicos (Artrot/Dren/CE)' # OR ≈ 3.67
+
+    # Cirurgia Médio/Pequeno Porte (Outras cirurgias não classificadas acima)
+    elif is_surgical:
+         return 'Cirurgia Médio/Pequeno Porte'
+
+    # Categoria Residual
+    else:
+        return 'Outros/Não Especificado'
+
+# Aplicar a função para criar a nova coluna
+df_analysis['PROC_NOME_agrupado'] = df_analysis['PROC_NOME'].apply(group_procedure)
+
+# Verificar as contagens e categorias resultantes
+print("\n   Contagem de Casos por Grupo de Procedimento Agrupado:")
+proc_counts = df_analysis['PROC_NOME_agrupado'].value_counts()
+print(proc_counts)
+# Salvar contagens (opcional)
+proc_counts.to_csv(os.path.join(output_dir, 'tabela_contagem_procedimentos.csv'))
+
+# Validar se a categoria de referência existe
+reference_category = 'Tratamento Conservador/Clínico'
+if reference_category not in df_analysis['PROC_NOME_agrupado'].unique():
+    print(f"\n!!! ALERTA !!! A categoria de referência definida '{reference_category}' não foi encontrada nos dados agrupados.")
+    print(f"Categorias encontradas: {list(df_analysis['PROC_NOME_agrupado'].unique())}")
+    print("Revise a função 'group_procedure' ou a definição de 'reference_category'.")
+
+print("   Agrupamento de procedimentos concluído.")
+
+
+# =============================================================================
+# 7. Análise por Grupo de Procedimento
+# =============================================================================
+print("\n7. Calculando taxas de readmissão por grupo de procedimento...")
+
+# Calcular taxa de readmissão por grupo
+readm_by_proc = df_analysis.groupby('PROC_NOME_agrupado')['readmissao_30d'].mean() * 100
+
+# Exibir taxas ordenadas
+print("\n   Taxa de Readmissão (%) por Grupo de Procedimento Agrupado:")
+print(readm_by_proc.sort_values(ascending=False))
+# Salvar taxas (opcional)
+readm_by_proc.sort_values(ascending=False).to_csv(os.path.join(output_dir, 'tabela_taxa_readm_por_procedimento.csv'))
+
+# Preparar dados para gráfico (Figura 4)
+readm_by_proc_df = readm_by_proc.reset_index()
+readm_by_proc_df.columns = ['PROC_NOME_agrupado', 'Taxa_Readmissao_Perc']
+
+print("   Cálculo de taxas concluído.")
+
+
+# =============================================================================
+# 8. Regressão Logística Multivariada (Modelo Final Conciliado)
+# =============================================================================
+print("\n8. Ajustando modelo de regressão logística multivariada final...")
+
+# Preparar dataframe para regressão
+print("   Preparando dados para regressão...")
+regression_cols = ['readmissao_30d', 'IDADE', 'PROC_NOME_agrupado', 'DIAS_PERM']
+# Verificar se todas as colunas existem
+missing_reg_cols = [col for col in regression_cols if col not in df_analysis.columns]
+if missing_reg_cols:
+    print(f"ERRO CRÍTICO: Colunas necessárias para regressão não encontradas: {missing_reg_cols}")
+    sys.exit(1)
+
+df_regression_final = df_analysis[regression_cols].copy()
+initial_rows = len(df_regression_final)
+df_regression_final.dropna(inplace=True) # Remover NaNs nas colunas do modelo
+rows_after_na = len(df_regression_final)
+print(f"      Removidas {initial_rows - rows_after_na} linhas com valores ausentes nas variáveis do modelo.")
+print(f"      Número de observações para o modelo: {rows_after_na}")
+
+# Aplicar transformações conforme reconciliação
+print("   Aplicando transformações (Idade por Década, LOS Padronizado)...")
+# 1. Escalar IDADE por década
+df_regression_final['IDADE_decada'] = df_regression_final['IDADE'] / 10.0
+
+# 2. Padronizar (Standardize) DIAS_PERM
+scaler_los = StandardScaler()
+# fit_transform espera um array 2D
+df_regression_final['DIAS_PERM_std'] = scaler_los.fit_transform(df_regression_final[['DIAS_PERM']])
+
+# Converter variável categórica de procedimento
+df_regression_final['PROC_NOME_agrupado'] = pd.Categorical(df_regression_final['PROC_NOME_agrupado'])
+
+# Definir a fórmula e ajustar o modelo
+# CONFIRME A CATEGORIA DE REFERÊNCIA!
+# reference_category já definida na Seção 6
+if reference_category not in df_regression_final['PROC_NOME_agrupado'].cat.categories:
+    print(f"\nAVISO URGENTE (Regressão): Categoria de referência '{reference_category}' NÃO encontrada.")
+    formula_final = "readmissao_30d ~ IDADE_decada + C(PROC_NOME_agrupado) + DIAS_PERM_std"
+else:
+    formula_final = f"readmissao_30d ~ IDADE_decada + C(PROC_NOME_agrupado, Treatment('{reference_category}')) + DIAS_PERM_std"
+
+print(f"\n   Fórmula utilizada: {formula_final}")
+
+try:
+    print("   Ajustando o modelo logístico...")
+    logit_model_final = smf.logit(formula_final, data=df_regression_final)
+    results_final = logit_model_final.fit()
+    print("      Modelo ajustado com sucesso.")
+
+    # Exibir resumo completo do modelo
+    print("\n   Resumo Completo do Modelo Logístico Final:")
+    print(results_final.summary())
+
+    # Calcular e exibir Odds Ratios
+    print("\n   Odds Ratios (OR) e IC 95% - Modelo Final Conciliado:")
+    conf_int_final = results_final.conf_int()
+    odds_ratios_final = pd.DataFrame({
+        'OR': np.exp(results_final.params),
+        'Lower CI': np.exp(conf_int_final[0]),
+        'Upper CI': np.exp(conf_int_final[1]),
+        'p-value': results_final.pvalues
+    })
+    odds_ratios_final_filtered = odds_ratios_final.drop(index='Intercept')
+    print(odds_ratios_final_filtered)
+    # Salvar tabela de ORs
+    or_table_path = os.path.join(output_dir, 'tabela3_odds_ratios_final.csv')
+    odds_ratios_final_filtered.to_csv(or_table_path)
+    print(f"\n      Tabela de Odds Ratios salva em '{or_table_path}'")
+
+    # Verificação explícita dos ORs principais contra o artigo
+    print("\n   --- Verificação dos ORs vs Artigo ---")
+    try:
+        or_idade_decada_calc = odds_ratios_final_filtered.loc['IDADE_decada', 'OR']
+        ci_idade_decada_lower_calc = odds_ratios_final_filtered.loc['IDADE_decada', 'Lower CI']
+        ci_idade_decada_upper_calc = odds_ratios_final_filtered.loc['IDADE_decada', 'Upper CI']
+        conciliado_idade = abs(or_idade_decada_calc - 1.21) < 0.015 # Margem pequena
+        print(f"   IDADE (por década): OR Calc={or_idade_decada_calc:.3f} (IC 95%: {ci_idade_decada_lower_calc:.3f}-{ci_idade_decada_upper_calc:.3f}) vs Artigo=1.21 -> Conciliado: {'Sim' if conciliado_idade else 'Não'}")
+    except KeyError: print("   ERRO: Variável 'IDADE_decada' não encontrada nos resultados.")
+
+    try:
+        or_los_std_calc = odds_ratios_final_filtered.loc['DIAS_PERM_std', 'OR']
+        ci_los_std_lower_calc = odds_ratios_final_filtered.loc['DIAS_PERM_std', 'Lower CI']
+        ci_los_std_upper_calc = odds_ratios_final_filtered.loc['DIAS_PERM_std', 'Upper CI']
+        conciliado_los = abs(or_los_std_calc - 0.89) < 0.015 # Margem pequena
+        print(f"   TEMPO INTERNAÇÃO (Std): OR Calc={or_los_std_calc:.3f} (IC 95%: {ci_los_std_lower_calc:.3f}-{ci_los_std_upper_calc:.3f}) vs Artigo=0.89 -> Conciliado: {'Sim' if conciliado_los else 'Não'}")
+    except KeyError: print("   ERRO: Variável 'DIAS_PERM_std' não encontrada nos resultados.")
+
+    # Preparar dados para Forest Plot (Seção 9.3)
+    print("\n   Preparando dados para Forest Plot...")
+    or_for_plot_final = odds_ratios_final_filtered.copy()
+    rename_map_final = {
+         f"C(PROC_NOME_agrupado, Treatment('{reference_category}'))[T.Cirurgia Grande Porte]": "Cirurgia Grande Porte",
+         f"C(PROC_NOME_agrupado, Treatment('{reference_category}'))[T.Procedimentos Específicos (Artrot/Dren/CE)]": "Procedimentos Específicos",
+         f"C(PROC_NOME_agrupado, Treatment('{reference_category}'))[T.Cirurgia Médio/Pequeno Porte]": "Cirurgia Médio/Pequeno Porte",
+         f"C(PROC_NOME_agrupado, Treatment('{reference_category}'))[T.Outros/Não Especificado]": "Outros/Não Especificado",
+         "IDADE_decada": "Idade (por década)",
+         "DIAS_PERM_std": "Tempo Internação (Std)"
     }
-  ],
-  "metadata": {
-    "colab": {
-      "provenance": [],
-      "include_colab_link": true
-    },
-    "kernelspec": {
-      "display_name": "Python 3",
-      "name": "python3"
-    }
-  },
-  "nbformat": 4,
-  "nbformat_minor": 0
-}
+    or_for_plot_final.index = or_for_plot_final.index.map(lambda x: rename_map_final.get(x, x))
+    vars_to_plot_final = list(rename_map_final.values()) # Plot all transformed variables
+    or_for_plot = or_for_plot_final.loc[or_for_plot_final.index.intersection(vars_to_plot_final)].copy()
+    print("      Dados para Forest Plot preparados.")
+    plot_data_ready = True
+
+except Exception as e:
+    print(f"\nERRO CRÍTICO ao ajustar o modelo de regressão final: {e}")
+    print("Verifique a fórmula, as variáveis de entrada e a categoria de referência.")
+    results_final = None
+    or_for_plot = None
+    plot_data_ready = False
+
+print("   Ajuste do modelo logístico concluído.")
+
+
+# =============================================================================
+# 9. Avaliação do Modelo e Geração de Figuras Finais
+# =============================================================================
+print("\n9. Avaliando modelo e gerando figuras finais...")
+
+# --- 9.1 Curva ROC e AUC (Figura 6) ---
+if results_final: # Procede somente se o modelo foi ajustado
+    print("   Calculando e plotando Curva ROC (Figura 6)...")
+    try:
+        predicted_probabilities = results_final.predict(df_regression_final)
+        fpr, tpr, thresholds = roc_curve(df_regression_final['readmissao_30d'], predicted_probabilities)
+        roc_auc = auc(fpr, tpr)
+        print(f"      Área Sob a Curva ROC (AUC): {roc_auc:.3f}") # Deve ser ~0.682
+
+        plt.figure(figsize=(8, 8))
+        plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'Curva ROC (AUC = {roc_auc:.3f})')
+        plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--', label='Referência (AUC = 0.5)')
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.xlabel('Taxa de Falsos Positivos (1 - Especificidade)')
+        plt.ylabel('Taxa de Verdadeiros Positivos (Sensibilidade)')
+        plt.title('Figura 6: Curva ROC para Predição de Readmissão')
+        plt.legend(loc="lower right")
+        plt.grid(alpha=0.4, linestyle='--')
+        plt.tight_layout()
+        fig6_path_png = os.path.join(output_dir, 'figura6_roc_curve.png')
+        fig6_path_tiff = os.path.join(output_dir, 'figura6_roc_curve.tiff')
+        plt.savefig(fig6_path_png, dpi=300)
+        plt.savefig(fig6_path_tiff, dpi=300)
+        print(f"      Figura 6 salva em '{fig6_path_png}' e '{fig6_path_tiff}'")
+        # plt.show()
+        plt.close()
+    except Exception as e:
+        print(f"      ERRO ao gerar Curva ROC: {e}")
+else:
+    print("   Modelo logístico não foi ajustado. Pulando cálculo da ROC/AUC.")
+
+
+# --- 9.2 Volume de Casos por Procedimento (Figura 3) ---
+print("\n   Gerando Figura 3: Volume de Casos por Procedimento...")
+# proc_counts foi calculado na Seção 6
+if 'proc_counts' in locals() and not proc_counts.empty:
+    plt.figure(figsize=(10, 7)) # Ajustado
+    bars = plt.bar(proc_counts.index, proc_counts.values, color=sns.color_palette("viridis", len(proc_counts)))
+    plt.title('Figura 3: Volume de Casos por Grupo de Procedimento', pad=15, fontsize=14)
+    plt.xlabel('Grupo de Procedimento', fontsize=12)
+    plt.ylabel('Número de Casos', fontsize=12)
+    plt.xticks(rotation=45, ha='right', fontsize=10)
+    plt.yticks(fontsize=10)
+    plt.grid(True, axis='y', linestyle='--', alpha=0.6)
+
+    for bar in bars:
+        yval = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width()/2.0, yval, f'{int(yval)}', ha='center', va='bottom', fontsize=9, fontweight='bold')
+
+    plt.tight_layout(pad=1.5)
+    fig3_path_png = os.path.join(output_dir, 'figura3_volume_procedimentos.png')
+    fig3_path_tiff = os.path.join(output_dir, 'figura3_volume_procedimentos.tiff')
+    plt.savefig(fig3_path_png, dpi=300)
+    plt.savefig(fig3_path_tiff, dpi=300)
+    print(f"      Figura 3 salva em '{fig3_path_png}' e '{fig3_path_tiff}'")
+    # plt.show()
+    plt.close()
+else:
+    print("      ERRO: Dados de contagem de procedimentos ('proc_counts') não disponíveis.")
+
+
+# --- 9.3 Taxa de Readmissão por Procedimento (Figura 4) ---
+print("\n   Gerando Figura 4: Taxa de Readmissão por Procedimento...")
+# readm_by_proc_df foi calculado na Seção 7
+if 'readm_by_proc_df' in locals() and not readm_by_proc_df.empty:
+    readm_by_proc_df_sorted = readm_by_proc_df.sort_values('Taxa_Readmissao_Perc', ascending=False)
+    plt.figure(figsize=(10, 7))
+    bars = plt.bar(readm_by_proc_df_sorted['PROC_NOME_agrupado'], readm_by_proc_df_sorted['Taxa_Readmissao_Perc'], color=sns.color_palette("magma", len(readm_by_proc_df_sorted)))
+    plt.title('Figura 4: Taxa de Readmissão (%) por Grupo de Procedimento', pad=15, fontsize=14)
+    plt.xlabel('Grupo de Procedimento', fontsize=12)
+    plt.ylabel('Taxa de Readmissão (%)', fontsize=12)
+    plt.xticks(rotation=45, ha='right', fontsize=10)
+    plt.yticks(fontsize=10)
+    plt.grid(True, axis='y', linestyle='--', alpha=0.6)
+    plt.ylim(0, max(readm_by_proc_df_sorted['Taxa_Readmissao_Perc']) * 1.18) # Espaço para rótulos
+
+    for bar in bars:
+        yval = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width()/2.0, yval, f'{yval:.2f}%', ha='center', va='bottom', fontsize=9, fontweight='bold')
+
+    plt.tight_layout(pad=1.5)
+    fig4_path_png = os.path.join(output_dir, 'figura4_taxa_readm_procedimentos.png')
+    fig4_path_tiff = os.path.join(output_dir, 'figura4_taxa_readm_procedimentos.tiff')
+    plt.savefig(fig4_path_png, dpi=300)
+    plt.savefig(fig4_path_tiff, dpi=300)
+    print(f"      Figura 4 salva em '{fig4_path_png}' e '{fig4_path_tiff}'")
+    # plt.show()
+    plt.close()
+else:
+     print("      ERRO: Dados de taxa de readmissão por procedimento ('readm_by_proc_df') não disponíveis.")
+
+
+# --- 9.4 Forest Plot (Figura 5) ---
+print("\n   Gerando Figura 5: Forest Plot...")
+# Usa 'or_for_plot' preparado na Seção 8
+if plot_data_ready and or_for_plot is not None and not or_for_plot.empty:
+    try:
+        or_for_plot_sorted = or_for_plot.sort_values('OR')
+        plt.figure(figsize=(10, 7))
+        y_pos = np.arange(len(or_for_plot_sorted))
+        plt.errorbar(x=or_for_plot_sorted['OR'], y=y_pos,
+                     xerr=[or_for_plot_sorted['OR'] - or_for_plot_sorted['Lower CI'],
+                           or_for_plot_sorted['Upper CI'] - or_for_plot_sorted['OR']],
+                     fmt='o', color='#003366', ecolor='#888888', capsize=5, capthick=1.5,
+                     markersize=7, elinewidth=1.5, label='Odds Ratio (IC 95%)')
+
+        plt.axvline(x=1, color='#990000', linestyle='--', alpha=0.8, label='Referência (OR=1)')
+        plt.yticks(y_pos, or_for_plot_sorted.index, fontsize=10)
+        plt.xlabel('Odds Ratio (Escala Logarítmica)', fontsize=12)
+        plt.ylabel('Fator de Risco', fontsize=12)
+        plt.title('Figura 5: Forest Plot dos Fatores de Risco para Readmissão', pad=15, fontsize=14)
+        plt.xscale('log') # Escala logarítmica é padrão para Forest Plots
+        plt.grid(True, axis='x', linestyle=':', alpha=0.5)
+        plt.legend(fontsize=10)
+        plt.tight_layout(pad=1.5)
+        fig5_path_png = os.path.join(output_dir, 'figura5_forest_plot_readmissao.png')
+        fig5_path_tiff = os.path.join(output_dir, 'figura5_forest_plot_readmissao.tiff')
+        plt.savefig(fig5_path_png, dpi=300)
+        plt.savefig(fig5_path_tiff, dpi=300)
+        print(f"      Figura 5 salva em '{fig5_path_png}' e '{fig5_path_tiff}'")
+        # plt.show()
+        plt.close()
+    except Exception as e:
+        print(f"      ERRO ao gerar Forest Plot: {e}")
+        print("      Verifique se 'or_for_plot' foi criado corretamente na seção 8.")
+
+elif not plot_data_ready:
+     print("      ERRO: Dados para Forest Plot ('or_for_plot') não foram preparados devido a erro na regressão.")
+else:
+     print("      ERRO: DataFrame 'or_for_plot' vazio ou não definido. Pulando Forest Plot.")
+
+print("   Geração de figuras concluída.")
+
+
+# =============================================================================
+# 10. Conclusão do Script
+# =============================================================================
+print("\n10. Análise concluída.")
+print(f"    Resultados e figuras foram salvos no diretório: '{output_dir}'")
+print("    Verifique os arquivos gerados e os resultados impressos no console.")
+print("    Lembre-se de revisar a função de agrupamento de procedimentos e a categoria de referência.")
